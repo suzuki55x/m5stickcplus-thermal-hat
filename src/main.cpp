@@ -85,6 +85,85 @@ float get_point(float *p, uint8_t rows, uint8_t cols, int8_t x, int8_t y);
 
 long loopTime, startTime, endTime, fps;
 
+
+// cover 1 --> 3, 32 * 24 --> 94 * 70
+void cover3() {
+    uint8_t x, y;
+    uint16_t pos      = 0;
+    float x_step      = 0.0;
+    float y_step      = 0.0;
+    float pixel_value = 0.0;
+    float max_step    = 0;
+
+    for (y = 0; y < ROWS - 1; y++) {
+        for (x = 0; x < COLS - 1; x++) {
+            pixel_value       = get_pixels(x, y);
+            x_step            = (get_pixels(x + 1, y) - pixel_value) / 3.0;
+            pos               = 3 * x + COLS_3 * (y * 3);
+            pixels_3[pos]     = pixel_value + x_step;
+            pixels_3[pos + 1] = pixels_3[pos] + x_step;
+            pixels_3[pos + 2] = pixels_3[pos + 1] + x_step;
+        }
+    }
+
+    for (y = 0; y < ROWS - 1; y++) {
+        for (x = 0; x < COLS_3; x++) {
+            pixel_value = get_pixels_3(x, y);
+            y_step      = (get_pixels_3(x, y + 1) - pixel_value) / 3.0;
+            pixels_3[(3 * y + 1) * COLS_3 + x] = pixel_value + y_step;
+            pixels_3[(3 * y + 2) * COLS_3 + x] = pixel_value + 2 * y_step;
+        }
+    }
+}
+
+void drawpixels(float *p, uint8_t rows, uint8_t cols) {
+    int colorTemp;
+    Serial.printf("%f, %f\r\n", mintemp, maxtemp);
+
+    for (int y = 0; y < rows; y++) {
+        for (int x = 0; x < cols; x++) {
+            float val = get_point(p, rows, cols, x, y);
+
+            if (val >= maxtemp) {
+                colorTemp = maxtemp;
+            } else if (val <= mintemp) {
+                colorTemp = mintemp;
+            } else {
+                colorTemp = val;
+            }
+
+            uint8_t colorIndex = map(colorTemp, mintemp, maxtemp, 0, 255);
+            colorIndex         = constrain(colorIndex, 0, 255);  // 0 ~ 255
+            // draw the pixels!
+            img.drawPixel(x, y, camColors[colorIndex]);
+        }
+    }
+
+    img.drawCircle(COLS_3 / 2, ROWS_3 / 2, 5,
+                   TFT_WHITE);  // update center spot icon
+    img.drawLine(COLS_3 / 2 - 8, ROWS_3 / 2, COLS_3 / 2 + 8, ROWS_3 / 2,
+                 TFT_WHITE);  // vertical line
+    img.drawLine(COLS_3 / 2, ROWS_3 / 2 - 8, COLS_3 / 2, ROWS_3 / 2 + 8,
+                 TFT_WHITE);  // horizontal line
+    img.setCursor(COLS_3 / 2 + 6, ROWS_3 / 2 - 12);
+    img.setTextColor(TFT_WHITE);
+    img.printf("%.2fC", get_point(p, rows, cols, cols / 2, rows / 2));
+    img.pushSprite(0, 0);
+
+    msg.fillScreen(TFT_BLACK);
+    msg.setTextColor(TFT_YELLOW);
+    msg.setCursor(11, 3);
+    msg.print("min tmp");
+    msg.setCursor(13, 15);
+    msg.printf("%.2fC", min_v);
+    msg.setCursor(11, 27);
+    msg.print("max tmp");
+    msg.setCursor(13, 39);
+    msg.printf("%.2fC", max_v);
+
+    msg.pushSprite(COLS_3, 10);
+}
+
 void setup() {
     M5.begin();
 
@@ -206,82 +285,4 @@ void loop() {
     loopTime = millis();
     endTime  = loopTime;
     fps      = 1000 / (endTime - startTime);
-}
-
-// cover 1 --> 3, 32 * 24 --> 94 * 70
-void cover3() {
-    uint8_t x, y;
-    uint16_t pos      = 0;
-    float x_step      = 0.0;
-    float y_step      = 0.0;
-    float pixel_value = 0.0;
-    float max_step    = 0;
-
-    for (y = 0; y < ROWS - 1; y++) {
-        for (x = 0; x < COLS - 1; x++) {
-            pixel_value       = get_pixels(x, y);
-            x_step            = (get_pixels(x + 1, y) - pixel_value) / 3.0;
-            pos               = 3 * x + COLS_3 * (y * 3);
-            pixels_3[pos]     = pixel_value + x_step;
-            pixels_3[pos + 1] = pixels_3[pos] + x_step;
-            pixels_3[pos + 2] = pixels_3[pos + 1] + x_step;
-        }
-    }
-
-    for (y = 0; y < ROWS - 1; y++) {
-        for (x = 0; x < COLS_3; x++) {
-            pixel_value = get_pixels_3(x, y);
-            y_step      = (get_pixels_3(x, y + 1) - pixel_value) / 3.0;
-            pixels_3[(3 * y + 1) * COLS_3 + x] = pixel_value + y_step;
-            pixels_3[(3 * y + 2) * COLS_3 + x] = pixel_value + 2 * y_step;
-        }
-    }
-}
-
-void drawpixels(float *p, uint8_t rows, uint8_t cols) {
-    int colorTemp;
-    Serial.printf("%f, %f\r\n", mintemp, maxtemp);
-
-    for (int y = 0; y < rows; y++) {
-        for (int x = 0; x < cols; x++) {
-            float val = get_point(p, rows, cols, x, y);
-
-            if (val >= maxtemp) {
-                colorTemp = maxtemp;
-            } else if (val <= mintemp) {
-                colorTemp = mintemp;
-            } else {
-                colorTemp = val;
-            }
-
-            uint8_t colorIndex = map(colorTemp, mintemp, maxtemp, 0, 255);
-            colorIndex         = constrain(colorIndex, 0, 255);  // 0 ~ 255
-            // draw the pixels!
-            img.drawPixel(x, y, camColors[colorIndex]);
-        }
-    }
-
-    img.drawCircle(COLS_3 / 2, ROWS_3 / 2, 5,
-                   TFT_WHITE);  // update center spot icon
-    img.drawLine(COLS_3 / 2 - 8, ROWS_3 / 2, COLS_3 / 2 + 8, ROWS_3 / 2,
-                 TFT_WHITE);  // vertical line
-    img.drawLine(COLS_3 / 2, ROWS_3 / 2 - 8, COLS_3 / 2, ROWS_3 / 2 + 8,
-                 TFT_WHITE);  // horizontal line
-    img.setCursor(COLS_3 / 2 + 6, ROWS_3 / 2 - 12);
-    img.setTextColor(TFT_WHITE);
-    img.printf("%.2fC", get_point(p, rows, cols, cols / 2, rows / 2));
-    img.pushSprite(0, 0);
-
-    msg.fillScreen(TFT_BLACK);
-    msg.setTextColor(TFT_YELLOW);
-    msg.setCursor(11, 3);
-    msg.print("min tmp");
-    msg.setCursor(13, 15);
-    msg.printf("%.2fC", min_v);
-    msg.setCursor(11, 27);
-    msg.print("max tmp");
-    msg.setCursor(13, 39);
-    msg.printf("%.2fC", max_v);
-
-    msg.pushSprite(COLS_3, 10);
 }
