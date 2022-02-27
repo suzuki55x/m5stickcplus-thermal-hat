@@ -12,9 +12,26 @@
 #include "MLX90640_API.h"
 #include "MLX90640_I2C_Driver.h"
 
+#include "Adafruit_TCS34725.h"
+
+Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS34725_GAIN_4X);
+
 TFT_eSprite img = TFT_eSprite(&M5.Lcd);
 TFT_eSprite msg = TFT_eSprite(&M5.Lcd);
 
+// color
+#define commonAnode true // set to false if using a common cathode LED.  //如果使用普通阴极LED，则设置为false
+byte gammatable[256];    // our RGB -> eye-recognized gamma color
+static uint16_t color16(uint16_t r, uint16_t g, uint16_t b)
+{
+    uint16_t _color;
+    _color = (uint16_t)(r & 0xF8) << 8;
+    _color |= (uint16_t)(g & 0xFC) << 3;
+    _color |= (uint16_t)(b & 0xF8) >> 3;
+    return _color;
+}
+
+// thermal
 #define TA_SHIFT 8 // Default shift for MLX90640 in open air
 #define COLS 32
 #define ROWS 24
@@ -408,8 +425,18 @@ void setup()
     M5.begin();
 
     // Increase I2C clock speed to 450kHz
-    Wire.begin(0, 26, 400000UL);
+    Wire.begin(0, 26, 400000UL); // HAT
     M5.Lcd.setRotation(1);
+    Wire1.begin(32, 33); // grove
+
+    while (!tcs.begin((uint8_t)41U, &Wire1))
+    { //如果color unit未能初始化
+        M5.Lcd.println("No TCS34725 found ... check your connections");
+        M5.Lcd.drawString("No Found sensor.", 50, 100, 4);
+        delay(1000);
+    }
+    tcs.setIntegrationTime(TCS34725_INTEGRATIONTIME_154MS); // Sets the integration time for the TC34725.  设置TC34725的集成时间
+    tcs.setGain(TCS34725_GAIN_4X);                          // Adjusts the gain on the TCS34725.  调整TCS34725上的增益
 
     // use show tmp bitmap
     img.createSprite(COLS_3, ROWS_3);
@@ -482,6 +509,47 @@ void loop()
 
     uint16_t mlx90640Frame[834];
 
+    uint16_t clear, red, green, blue;
+    tcs.getRawData(&red, &green, &blue, &clear); // Reads the raw red, green, blue and clear channel values.  读取原始的红、绿、蓝和清晰的通道值
+
+    // Figure out some basic hex code for visualization.  生成对应的十六进制代码
+    uint32_t sum = clear;
+    float r, g, b;
+    r = red;
+    r /= sum;
+    g = green;
+    g /= sum;
+    b = blue;
+    b /= sum;
+    r *= 256;
+    g *= 256;
+    b *= 256;
+    // uint16_t _color = color16((int)r, (int)g, (int)b);
+
+    M5.lcd.setCursor(160, 0);               // Place the cursor at (0,0).  将光标固定在(0,0)
+    M5.lcd.fillRect(160, 0, 80, 80, BLACK); // Fill the screen with a black rectangle.  将屏幕填充黑色矩形
+    Serial.println(clear);
+    M5.Lcd.print("C:");
+    M5.Lcd.println(clear);
+    M5.lcd.setCursor(160, 10);
+    Serial.println(red);
+    M5.Lcd.print("R:");
+    M5.Lcd.println(red);
+    M5.lcd.setCursor(160, 20);
+    Serial.println(green);
+    M5.Lcd.print("G:");
+    M5.Lcd.println(green);
+    M5.lcd.setCursor(160, 30);
+    Serial.println(blue);
+    M5.Lcd.print("B:");
+    M5.Lcd.println(blue);
+    M5.lcd.setCursor(160, 40);
+    M5.Lcd.print("0x");
+    M5.Lcd.print((int)r, HEX);
+    M5.Lcd.print((int)g, HEX);
+    M5.Lcd.print((int)b, HEX);
+    M5.lcd.setCursor(0, 0); // Place the cursor at (0,0).  将光标固定在(0,0)
+
     // those fun get tmp array, 32*24, 5fps
     for (byte x = 0; x < speed_setting; x++)
     {
@@ -511,6 +579,7 @@ void loop()
     {
         Serial.printf("[px%d]%g\n", i, reversePixels[i]);
     }
+    Serial.printf("[RGB]: %f,%f,%f\n", r, g, b);
 
     // Reverse image (order of Integer array)
     for (int x = 0; x < pixelsArraySize; x++)
