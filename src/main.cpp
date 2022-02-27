@@ -8,11 +8,43 @@
 #include <M5StickCPlus.h>
 #include <Wire.h>
 
-#include "Arduino.h"
 #include "MLX90640_API.h"
 #include "MLX90640_I2C_Driver.h"
 
 #include "Adafruit_TCS34725.h"
+
+#include <BLEDevice.h>
+#include <BLEUtils.h>
+#include <BLEServer.h>
+#include <BLE2902.h>
+
+#define DELAY_MS 30 * 1000
+
+#define COLOR_SERVICE_UUID "55c29024-939d-11ec-b909-0242ac120002"
+#define COLOR_CHARA_UUID "5e7b4422-939d-11ec-b909-0242ac120002"
+#define THERMAL_SERVICE_UUID "55c29025-939d-11ec-b909-0242ac120002"
+#define THERMAL_CHARA_UUID "5e7b4423-939d-11ec-b909-0242ac120002"
+
+BLEServer *pServer = NULL;
+BLECharacteristic *pColorChara;
+BLECharacteristic *pThermalChara;
+
+// BLE 接続状態
+bool deviceConnected = false;
+bool oldDeviceConnected = false;
+
+class MyServerCallbacks : public BLEServerCallbacks
+{
+    void onConnect(BLEServer *pServer)
+    {
+        deviceConnected = true;
+    };
+
+    void onDisconnect(BLEServer *pServer)
+    {
+        deviceConnected = false;
+    }
+};
 
 Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS34725_GAIN_4X);
 
@@ -469,6 +501,29 @@ void setup()
     {
         M5.Lcd.drawRect(icol, 72, 1, 8, camColors[icol * 2]);
     }
+
+    BLEDevice::init("M5ColorAndThermal");
+    pServer = BLEDevice::createServer();
+    pServer->setCallbacks(new MyServerCallbacks());
+    BLEService *pColorService = pServer->createService(COLOR_SERVICE_UUID);
+    pColorChara = pColorService->createCharacteristic(COLOR_CHARA_UUID, BLECharacteristic::PROPERTY_NOTIFY);
+    BLEService *pThermalService = pServer->createService(THERMAL_SERVICE_UUID);
+    pThermalChara = pThermalService->createCharacteristic(THERMAL_CHARA_UUID, BLECharacteristic::PROPERTY_NOTIFY);
+    // https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.descriptor.gatt.client_characteristic_configuration.xml
+    // Create a BLE Descriptor
+    pColorChara->addDescriptor(new BLE2902());
+    pThermalChara->addDescriptor(new BLE2902());
+    pColorService->start();
+    pThermalService->start();
+    Serial.println("BLE setup");
+
+    BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+    pAdvertising->addServiceUUID(COLOR_SERVICE_UUID);
+    pAdvertising->addServiceUUID(THERMAL_SERVICE_UUID);
+    pAdvertising->setScanResponse(false);
+    pAdvertising->setMinPreferred(0x0); // set value to 0x00 to not advertise this parameter
+    BLEDevice::startAdvertising();
+    Serial.println("Waiting a client connection to notify...");
 }
 
 void loop()
@@ -575,11 +630,41 @@ void loop()
 
     // if want to send tmp array to other device, you can write fun in here:
     // xxx.send(reversePixels, 32*24);
+    char str[20];
     for (int i = 0; i < 768; i++)
     {
+        if (deviceConnected)
+        {
+            sprintf(str, "%d, %g", i, reversePixels[i]);
+            pThermalChara->setValue(str);
+            pThermalChara->notify();
+            delay(1);
+        }
         Serial.printf("[px%d]%g\n", i, reversePixels[i]);
     }
+    if (deviceConnected)
+    {
+        sprintf(str, "%3.2f,%3.2f,%3.2f", r, g, b);
+        Serial.printf("[RGB]: %s\n", str);
+        pColorChara->setValue(str);
+        pColorChara->notify();
+    }
     Serial.printf("[RGB]: %f,%f,%f\n", r, g, b);
+
+    // disconnecting
+    if (!deviceConnected && oldDeviceConnected)
+    {
+        delay(500);                  // give the bluetooth stack the chance to get things ready
+        pServer->startAdvertising(); // restart advertising
+        Serial.println("start advertising");
+        oldDeviceConnected = deviceConnected;
+    }
+    // connecting
+    if (deviceConnected && !oldDeviceConnected)
+    {
+        // do stuff here on connecting
+        oldDeviceConnected = deviceConnected;
+    }
 
     // Reverse image (order of Integer array)
     for (int x = 0; x < pixelsArraySize; x++)
@@ -617,4 +702,6 @@ void loop()
     loopTime = millis();
     endTime = loopTime;
     fps = 1000 / (endTime - startTime);
+
+    delay(DELAY_MS);
 }
