@@ -638,7 +638,7 @@ void loop()
             sprintf(str, "%d, %g", i, reversePixels[i]);
             pThermalChara->setValue(str);
             pThermalChara->notify();
-            delay(1);
+            delay(10);
         }
         Serial.printf("[px%d]%g\n", i, reversePixels[i]);
     }
